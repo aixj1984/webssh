@@ -9,9 +9,9 @@ import (
 func main() {
 	r := gin.Default()
 
-	//跨域设置
+	// 跨域设置
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://127.0.0.1", "http://localhost:8080"},
+		AllowOrigins:     []string{"*"},
 		AllowHeaders:     []string{"Origin"},
 		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: true,

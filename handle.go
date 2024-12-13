@@ -8,10 +8,9 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -80,20 +79,24 @@ func (w WebSSH) ServeConn(c *gin.Context) {
 
 	var recorder *Recorder
 	if w.Record {
-		mask := syscall.Umask(0)
-		defer syscall.Umask(mask)
-		os.MkdirAll(w.RecPath, 0766)
-		fileName := path.Join(w.RecPath, fmt.Sprintf("%s_%s_%s.cast", w.RemoteAddr, w.User, time.Now().Format("20060102_150405")))
-		f, err := os.OpenFile(fileName, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0766)
+		// mask := syscall.Umask(0)
+		// defer syscall.Umask(mask)
+		os.MkdirAll(w.RecPath, os.ModePerm)
+
+		safeRemoteAddr := strings.ReplaceAll(w.RemoteAddr, ":", "_")
+		fileName := filepath.Join(w.RecPath, fmt.Sprintf("%s_%s_%s.cast", safeRemoteAddr, w.User, time.Now().Format("20060102_150405")))
+
+		f, err := os.OpenFile(fileName, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 		if err != nil {
+			fmt.Println(err.Error())
 			c.AbortWithStatusJSON(200, gin.H{"ok": false, "msg": err.Error()})
 		}
+		fmt.Println(fileName)
 		defer f.Close()
 		recorder = NewRecorder(f)
 	}
 
 	turn, err := NewTurn(wsConn, client, recorder)
-
 	if err != nil {
 		wsConn.WriteControl(websocket.CloseMessage,
 			[]byte(err.Error()), time.Now().Add(time.Second))
@@ -101,7 +104,7 @@ func (w WebSSH) ServeConn(c *gin.Context) {
 	}
 	defer turn.Close()
 
-	var logBuff = bufPool.Get().(*bytes.Buffer)
+	logBuff := bufPool.Get().(*bytes.Buffer)
 	logBuff.Reset()
 	defer bufPool.Put(logBuff)
 
