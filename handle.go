@@ -52,30 +52,33 @@ func (w WebSSH) ServeConn(c *gin.Context) {
 		return
 	}
 	defer wsConn.Close()
-	var config *SSHClientConfig
-	switch w.AuthModel {
 
-	case PASSWORD:
-		config = SSHClientConfigPassword(
-			w.RemoteAddr,
-			w.User,
-			w.Password,
-		)
-	case PUBLICKEY:
-		config = SSHClientConfigPulicKey(
-			w.RemoteAddr,
-			w.User,
-			w.PkPath,
-		)
-	}
+	/*
+		var config *SSHClientConfig
+		switch w.AuthModel {
 
-	client, err := NewSSHClient(config)
-	if err != nil {
-		wsConn.WriteControl(websocket.CloseMessage,
-			[]byte(err.Error()), time.Now().Add(time.Second))
-		return
-	}
-	defer client.Close()
+		case PASSWORD:
+			config = SSHClientConfigPassword(
+				w.RemoteAddr,
+				w.User,
+				w.Password,
+			)
+		case PUBLICKEY:
+			config = SSHClientConfigPulicKey(
+				w.RemoteAddr,
+				w.User,
+				w.PkPath,
+			)
+		}
+
+		client, err := NewSSHClient(config)
+		if err != nil {
+			wsConn.WriteControl(websocket.CloseMessage,
+				[]byte(err.Error()), time.Now().Add(time.Second))
+			return
+		}
+		defer client.Close()
+	*/
 
 	var recorder *Recorder
 	if w.Record {
@@ -96,14 +99,14 @@ func (w WebSSH) ServeConn(c *gin.Context) {
 		recorder = NewRecorder(f)
 	}
 
-	turn, err := NewTurn(wsConn, client, recorder)
+	turn, err := NewTurn(wsConn, "python", nil, recorder)
 	if err != nil {
+		log.Printf("Error in LoopRead: %#v", err)
 		wsConn.WriteControl(websocket.CloseMessage,
 			[]byte(err.Error()), time.Now().Add(time.Second))
 		return
 	}
 	defer turn.Close()
-
 	logBuff := bufPool.Get().(*bytes.Buffer)
 	logBuff.Reset()
 	defer bufPool.Put(logBuff)
@@ -111,21 +114,28 @@ func (w WebSSH) ServeConn(c *gin.Context) {
 	ctx, cancel := context.WithCancel(context.Background())
 	wg := sync.WaitGroup{}
 	wg.Add(2)
+
 	go func() {
 		defer wg.Done()
 		err := turn.LoopRead(logBuff, ctx)
 		if err != nil {
-			log.Printf("%#v", err)
+			log.Printf("Error in LoopRead: %#v", err)
+			// cancel() // Ensure the other goroutine exits as well
 		}
 	}()
+
 	go func() {
 		defer wg.Done()
-		err := turn.SessionWait()
+		err := turn.CmdWait()
 		if err != nil {
-			log.Printf("%#v", err)
+			log.Printf("Error in CmdWait: %#v", err)
+			// cancel() // Ensure the other goroutine exits as well
 		}
 		cancel()
 	}()
+
+	log.Println("asdfafadfadfa")
+
 	wg.Wait()
 }
 

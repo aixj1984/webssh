@@ -9,8 +9,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 
-	"github.com/aymanbagabas/go-pty"
+	"github.com/creack/pty"
 	"github.com/gorilla/websocket"
 )
 
@@ -20,8 +21,8 @@ const (
 )
 
 type Turn struct {
-	Pty      pty.Pty
-	Cmd      *pty.Cmd
+	Pty      *os.File
+	Cmd      *exec.Cmd
 	WsConn   *websocket.Conn
 	Recorder *Recorder
 }
@@ -33,21 +34,16 @@ type Resize struct {
 
 // NewTurn initializes a new Turn with a pseudo-terminal
 func NewTurn(wsConn *websocket.Conn, command string, args []string, recorder *Recorder) (*Turn, error) {
-	// Create a new PTY
-	ptyInstance, err := pty.New()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create PTY: %v", err)
-	}
+	cmd := exec.Command(command, args...)
 
-	// Create the command to run
-	cmd := ptyInstance.Command(command, args...)
-	if err := cmd.Start(); err != nil {
-		ptyInstance.Close()
-		return nil, fmt.Errorf("failed to start command: %v", err)
+	// Create pseudo-terminal
+	ptyFile, err := pty.Start(cmd)
+	if err != nil {
+		return nil, fmt.Errorf("failed to start pty: %v", err)
 	}
 
 	turn := &Turn{
-		Pty:      ptyInstance,
+		Pty:      ptyFile,
 		Cmd:      cmd,
 		WsConn:   wsConn,
 		Recorder: recorder,
@@ -64,10 +60,10 @@ func (t *Turn) pipeOutput() {
 	for {
 		n, err := t.Pty.Read(buffer)
 		if err != nil {
-			if errors.Is(err, os.ErrClosed) {
+			if err.Error() == "EOF" {
 				log.Println("PTY closed")
 			} else {
-				log.Printf("Error reading from PTY: %v", err)
+				log.Printf("Error reading from pty: %v", err)
 			}
 			t.Close() // Close the connection gracefully when reading from PTY fails
 			return
@@ -114,17 +110,20 @@ func (t *Turn) LoopRead(logBuff *bytes.Buffer, ctx context.Context) error {
 					return fmt.Errorf("failed to unmarshal resize message: %v", err)
 				}
 				if args.Columns > 0 && args.Rows > 0 {
-					if err := t.Pty.Resize(int(args.Rows), int(args.Columns)); err != nil {
-						log.Printf("Failed to resize PTY: %v", err)
-						return fmt.Errorf("failed to resize PTY: %v", err)
+					if err := pty.Setsize(t.Pty, &pty.Winsize{
+						Cols: uint16(args.Columns),
+						Rows: uint16(args.Rows),
+					}); err != nil {
+						log.Printf("Failed to resize pty: %v", err)
+						return fmt.Errorf("failed to resize pty: %v", err)
 					}
 				}
 
 			case MsgData:
 				// Write data to pseudo-terminal
 				if _, err := t.Pty.Write(body); err != nil {
-					log.Printf("PTY write error: %s", err)
-					return fmt.Errorf("PTY write err: %s", err)
+					log.Printf("Pty write error: %s", err)
+					return fmt.Errorf("Pty write err: %s", err)
 				}
 
 				// Write data to log buffer
@@ -153,7 +152,6 @@ func (t *Turn) Close() error {
 	if err := t.Cmd.Process.Kill(); err != nil {
 		return err
 	}
-	t.Pty.Close()
 	return t.WsConn.Close()
 }
 

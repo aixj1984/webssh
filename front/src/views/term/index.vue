@@ -1,74 +1,88 @@
 <template>
-    <div id="app"></div>
+  <div id="app"></div>
 </template>
 <script>
-import 'xterm/css/xterm.css'
-import "@/styles/xterm.css"
-import { Terminal } from 'xterm'
-import { FitAddon } from 'xterm-addon-fit'
-import Base64 from "crypto-js/enc-base64"
-import Utf8 from "crypto-js/enc-utf8"
-const msgData = '1'
-const msgResize = '2'
+import "xterm/css/xterm.css";
+import "@/styles/xterm.css";
+import { Terminal } from "xterm";
+import { FitAddon } from "xterm-addon-fit";
+import Base64 from "crypto-js/enc-base64";
+import Utf8 from "crypto-js/enc-utf8";
+const msgData = "1";
+const msgResize = "2";
 export default {
-    name:"App",
-    mounted() {
-        console.log("here")
-        const terminal = new Terminal({})
-        const fitAddon = new FitAddon()
-        terminal.loadAddon(fitAddon)
-        fitAddon.fit()
-        let terminalContainer = document.getElementById("app")
-        const webSocket = new WebSocket(`ws://127.0.0.1:8080/ws/1`)
-        webSocket.binaryType='arraybuffer';
-        const enc = new TextDecoder("utf-8");
-        webSocket.onmessage = (event) => {
-            terminal.write(enc.decode(event.data));
-        }
+  name: "App",
+  mounted() {
+    console.log("here");
+    const terminal = new Terminal({});
+    const fitAddon = new FitAddon();
+    terminal.loadAddon(fitAddon);
+    fitAddon.fit();
+    var domain = window.location.hostname;
+    console.log("域名:", domain);
+    // 从URL中提取端口号（如果存在）
 
-        webSocket.onopen = () => {
-            terminal.open(terminalContainer)
-            fitAddon.fit()
-            terminal.write("welcome to WebSSH ☺\r\n")
-            terminal.focus()
-        }
+    var port = window.location.port ? ":" + window.location.port : "";
+    console.log("端口号:", port);
 
-        webSocket.onclose = () => {
-            terminal.write("\r\nWebSSH quit!")
-        }
+    let terminalContainer = document.getElementById("app");
+    const webSocket = new WebSocket(`ws://` + domain + port + `/ws/1`);
+    webSocket.binaryType = "arraybuffer";
+    const enc = new TextDecoder("utf-8");
+    webSocket.onmessage = (event) => {
+      terminal.write(enc.decode(event.data));
+    };
 
-        webSocket.onerror = (event) => {
-            console.error(event)
-            webSocket.close()
-        }
+    webSocket.onopen = () => {
+      terminal.open(terminalContainer);
+      fitAddon.fit();
+      terminal.write("welcome to WebSSH ☺\r\n");
+      terminal.focus();
+    };
 
-        terminal.onKey((event) => {
-            webSocket.send(msgData + Base64.stringify(Utf8.parse(event.key)),ArrayBuffer)
-        })
+    webSocket.onclose = () => {
+      terminal.write("\r\nWebSSH quit!");
+    };
 
-        terminal.onResize(({ cols, rows }) => {
-            console.log(cols,rows)
-            webSocket.send(msgResize +
-                Base64.stringify(
-                    Utf8.parse(
-                        JSON.stringify({
-                            columns: cols,
-                            rows: rows
-                        })
-                    )
-                ),ArrayBuffer
+    webSocket.onerror = (event) => {
+      console.error(event);
+      webSocket.close();
+    };
+
+    terminal.onKey((event) => {
+      webSocket.send(
+        msgData + Base64.stringify(Utf8.parse(event.key)),
+        ArrayBuffer
+      );
+    });
+
+    terminal.onResize(({ cols, rows }) => {
+      console.log(cols, rows);
+      webSocket.send(
+        msgResize +
+          Base64.stringify(
+            Utf8.parse(
+              JSON.stringify({
+                columns: cols,
+                rows: rows,
+              })
             )
-        })
-        // 内容全屏显示-窗口大小发生改变时
-        // resizeScreen
-        window.addEventListener("resize", () =>{
-            fitAddon.fit()
-        },false)
-
-    },
-    methods: {
-    },
-}
+          ),
+        ArrayBuffer
+      );
+    });
+    // 内容全屏显示-窗口大小发生改变时
+    // resizeScreen
+    window.addEventListener(
+      "resize",
+      () => {
+        fitAddon.fit();
+      },
+      false
+    );
+  },
+  methods: {},
+};
 </script>
 
 <style scoped>
